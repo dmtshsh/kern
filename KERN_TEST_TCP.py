@@ -7,12 +7,12 @@ MOVE_TIMEOUT = 30
 SETTLE_POLL_INTERVAL = 0.1
 DELAY_TIME = 1
 SPEED_MIN = 100 
-SPEED_MAX = 1500
+SPEED_MAX = 2000
 ACCEL_MIN = 2
-ACCEL_MAX = 240
-CONVERTER_IP = "192.168.1.202"   # your RS485-to-ETH converter's IP
+ACCEL_MAX = 254
+CONVERTER_IP = "192.168.1.143"   # your RS485-to-ETH converter's IP
 CONVERTER_PORT = 4196            # confirm the actual configured port
-ADDR = 1
+ADDR = 2
 PORT = "COM3"   # e.g. "COM5" on Windows
 ABS_MAX = 200000
 
@@ -38,7 +38,7 @@ if __name__ == "__main__":
     while (wait_state(motor, States.STATE_STOP)):
         pass
 
-    motor.run_position_absolute_axis_retry(ABS_MAX,100)
+    motor.run_position_absolute_axis_retry(ABS_MAX,300)
     print("Maxxing...")
     while (wait_state(motor, States.STATE_STOP)):
         pass

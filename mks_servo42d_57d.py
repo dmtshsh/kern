@@ -139,6 +139,24 @@ class MksServo:
     def _checksum(data: bytes) -> int:
         return sum(data) & 0xFF
 
+    def _transport_write_read(self, frame: bytes, reply_len: int, delay: float) -> bytes:
+        """
+        Transport-specific: send `frame` and read up to `reply_len` bytes
+        back. Serial implementation here; MksServoTCP (in
+        mks_servo42d_57d_tcp.py) overrides this (and _transport_read_more)
+        to use a socket instead - the retry/resync algorithm in _send()
+        below is shared unchanged by both transports.
+        """
+        self.ser.reset_input_buffer()
+        self.ser.write(frame)
+        time.sleep(delay)
+        return self.ser.read(reply_len)
+
+    def _transport_read_more(self, reply_len: int) -> bytes:
+        """Transport-specific: read more bytes WITHOUT sending anything -
+        used by _send()'s resync step when a stale frame is detected."""
+        return self.ser.read(reply_len)
+
     def _send(self, payload: bytes, reply_len: int = 8, delay: float = 0.02) -> bytes:
         """
         payload = [addr, func, ...data]  (head byte and CRC added here)
@@ -151,6 +169,15 @@ class MksServo:
         Only returns a bad reply (letting _check_reply raise, as before)
         after every retry has been exhausted, so a genuinely dead link or
         a real driver-side fail status still surfaces as an error.
+
+        Special-cased: a reply with the correct head byte but the WRONG
+        function code is treated as a stale/unsolicited frame (some
+        firmware pushes status updates for an in-progress move without
+        being asked - see set_uart_response()/0x8C to disable that at the
+        source) rather than corruption. In that case we try reading
+        further bytes WITHOUT resending first, since the actual answer to
+        THIS command may already be queued right behind the stale one -
+        avoiding a redundant resend of what could be a motion command.
         """
         func = payload[1]
         last_reply = b""
@@ -161,16 +188,29 @@ class MksServo:
             if self.debug:
                 print(f"TX (attempt {attempt}/{self.retries}):", frame.hex(" "))
 
-            self.ser.reset_input_buffer()
-            self.ser.write(frame)
-            time.sleep(delay)
-            reply = self.ser.read(reply_len)
+            reply = self._transport_write_read(frame, reply_len, delay)
             if self.debug:
                 print("RX:", reply.hex(" ") if reply else "(empty)")
 
             last_reply = reply
             if len(reply) >= reply_len and reply[0] == self.HEAD_RX and reply[2] == func:
                 return reply
+
+            # Correctly-headed frame, wrong function code -> likely a
+            # stale/unsolicited push queued ahead of our real reply.
+            # Try reading on WITHOUT resending before falling back to a
+            # full retry - the real answer may already be right behind it.
+            if len(reply) >= 3 and reply[0] == self.HEAD_RX and reply[2] != func:
+                if self.debug:
+                    print(f"  got reply for func 0x{reply[2]:02X}, expected "
+                          f"0x{func:02X} - likely a stale push, reading on "
+                          f"without resending...")
+                more = self._transport_read_more(reply_len)
+                if self.debug:
+                    print("RX (resync):", more.hex(" ") if more else "(empty)")
+                if len(more) >= reply_len and more[0] == self.HEAD_RX and more[2] == func:
+                    return more
+                last_reply = more or reply
 
             if attempt < self.retries:
                 if self.debug:
@@ -621,4 +661,3 @@ class MksServo:
         reply = self._send(bytes([self.addr, 0xF5]) + data, reply_len=5)
         self._check_reply(reply, 0xF5, min_len=5)
         return reply[3]
-

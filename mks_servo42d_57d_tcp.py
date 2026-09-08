@@ -66,7 +66,9 @@ class MksServoTCP(MksServo):
     transparent-mode RS485-to-Ethernet converter, instead of a local
     serial port. Every method inherited from MksServo (run_speed,
     run_position_absolute_axis, read_encoder, homing, etc.) works
-    unchanged - only the transport (this class) differs.
+    unchanged, INCLUDING the retry/stale-frame-resync logic in _send() -
+    only the low-level transport (_transport_write_read/_transport_read_more,
+    below) differs between this and the serial version.
 
     Example
     -------
@@ -76,13 +78,20 @@ class MksServoTCP(MksServo):
     """
 
     def __init__(self, host: str, port: int = 4196, addr: int = 1,
-                 timeout: float = 0.5, debug: bool = False):
+                 timeout: float = 0.5, debug: bool = False,
+                 retries: int = 3, retry_delay: float = 0.05):
         # Deliberately NOT calling super().__init__() - it opens a local
         # serial port, which we don't want here. Set up the same instance
-        # attributes MksServo's other methods rely on (self.addr, self.debug)
-        # and open a TCP socket in self.sock instead of self.ser.
+        # attributes MksServo's methods rely on (self.addr, self.debug,
+        # self.retries, self.retry_delay) and open a TCP socket in
+        # self.sock instead of self.ser. The retry/resync algorithm itself
+        # lives once in MksServo._send() and is reused unchanged - only
+        # _transport_write_read/_transport_read_more below are overridden
+        # for the socket transport.
         self.addr = addr
         self.debug = debug
+        self.retries = retries
+        self.retry_delay = retry_delay
         self.host = host
         self.port = port
         self.timeout = timeout
@@ -96,16 +105,12 @@ class MksServoTCP(MksServo):
             except OSError:
                 pass
 
-    def _send(self, payload: bytes, reply_len: int = 8, delay: float = 0.02) -> bytes:
+    def _transport_write_read(self, frame: bytes, reply_len: int, delay: float) -> bytes:
         """
-        Same framing as the serial version (FA head, checksum, etc.) - just
-        written to/read from a TCP socket instead of a serial port.
+        Same framing as the serial version (handled by the shared _send()
+        in MksServo) - this just does the actual bytes-over-the-wire part
+        via a TCP socket instead of a serial port.
         """
-        frame = bytes([self.HEAD_TX]) + payload
-        frame += bytes([self._checksum(frame)])
-        if self.debug:
-            print("TX:", frame.hex(" "))
-
         # Drain anything stale sitting in the socket buffer before sending,
         # mirroring reset_input_buffer() on the serial version - a
         # transparent-mode converter can occasionally have a stray byte or
@@ -123,12 +128,40 @@ class MksServoTCP(MksServo):
         time.sleep(delay)
 
         try:
-            reply = self.sock.recv(reply_len)
+            return self.sock.recv(reply_len)
         except socket.timeout:
-            reply = b""
+            return b""
 
-        if self.debug:
-            print("RX:", reply.hex(" "))
-        return reply
+    def _transport_read_more(self, reply_len: int) -> bytes:
+        """Read more bytes WITHOUT sending anything - used by _send()'s
+        resync step when a stale/unsolicited frame is detected."""
+        try:
+            return self.sock.recv(reply_len)
+        except socket.timeout:
+            return b""
 
 
+# ===========================================================================
+# Example usage
+# ===========================================================================
+
+# if __name__ == "__main__":
+#     CONVERTER_IP = "192.168.1.200"   # your RS485-to-ETH converter's IP
+#     CONVERTER_PORT = 4196            # confirm the actual configured port
+#     ADDR = 1
+
+#     with MksServoTCP(CONVERTER_IP, port=CONVERTER_PORT, addr=ADDR, debug=True) as motor:
+#         print("Enabling motor...")
+#         print("Enable OK:", motor.enable_motor(True))
+
+#         print("Reading encoder:", motor.read_encoder())
+
+#         print("Moving to absolute axis 100000 at 250 RPM...")
+#         status = motor.run_position_absolute_axis(target_axis=100000, rpm=250, acc=2)
+#         print("Move status:", status)
+#         time.sleep(3)
+
+#         print("Current axis:", motor.read_encoder_addition())
+
+#         print("Disabling motor.")
+#         motor.enable_motor(False)
