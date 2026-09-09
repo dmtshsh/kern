@@ -8,13 +8,15 @@ SETTLE_POLL_INTERVAL = 0.1
 DELAY_TIME = 1
 SPEED_MIN = 100 
 SPEED_MAX = 2000
-ACCEL_MIN = 2
-ACCEL_MAX = 254
-CONVERTER_IP = "192.168.2.202"   # your RS485-to-ETH converter's IP
+ACCEL_MIN = 20
+ACCEL_MAX = 250
+CONVERTER_IP = "192.168.2.201"   # your RS485-to-ETH converter's IP
 CONVERTER_PORT = 4196            # confirm the actual configured port
-ADDR = 2
+ADDR = 1
 PORT = "COM3"   # e.g. "COM5" on Windows
-ABS_MAX = 200000
+ABS_MAX = 500000
+SPEED = 2000
+ACCEL = 250
 
 
      
@@ -45,13 +47,13 @@ if __name__ == "__main__":
 
     max_axis = motor.read_encoder_fix()
     print("max_axis", max_axis,motor.read_encoder(), "pulses", motor.read_pulses())
-
+    # max_axis = 416082
     while (1):
             speed = random.randint(SPEED_MIN, SPEED_MAX)
             accel = random.randint(ACCEL_MIN, ACCEL_MAX)
             print("speed:", speed, "accel:", accel)
             motor.run_position_absolute_axis_retry(0, speed, accel)
-            # motor.run_position_absolute_axis(0, speed, accel)
+            # motor.run_position_absolute_axis_retry(0, SPEED, ACCEL)
             while (wait_state(motor, States.STATE_STOP)):
                 pass
             print("pos_0:",motor.read_encoder_fix())
@@ -59,7 +61,7 @@ if __name__ == "__main__":
             accel = random.randint(ACCEL_MIN, ACCEL_MAX)
             print("speed:", speed, "accel:", accel)
             motor.run_position_absolute_axis_retry(max_axis, speed, accel)
-            # motor.run_position_absolute_axis(max_axis, speed, accel)
+            # motor.run_position_absolute_axis_retry(max_axis, SPEED, ACCEL)
             while (wait_state(motor, States.STATE_STOP)):
                 pass
             print("pos_up:", motor.read_encoder_fix())

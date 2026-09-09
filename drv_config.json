@@ -1,7 +1,7 @@
 {
   "work_mode": "SR_vFOC",
-  "current_ma": 1200,
-  "microstep": 16,
+  "current_ma": 3200,
+  "microstep": 64,
   "en_active_level": "LOW",
   "direction": "CW",
   "auto_screen_off": true,
@@ -11,7 +11,7 @@
   "uart_respond_all": true,
   "uart_active_report": false,
   "group_addr": null,
-  "modbus_addr": 2,  
+  "modbus_addr": 1,  
   "home_trigger_level": 1,
   "home_dir": "CCW",
   "home_speed_rpm": 90,
